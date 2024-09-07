@@ -5,13 +5,18 @@ import os
 from typing import Annotated
 
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, AIMessage
+
 from typing_extensions import TypedDict
 
 from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import MemorySaver
+
+from tools.time_tool import time_tool
+
+
 
 
 # Suppress logging warnings
@@ -26,13 +31,15 @@ class State(TypedDict):
     messages: Annotated[list, add_messages]
 
 
+
+
 def main():
 
     graph_builder = StateGraph(State)
 
     # tool = WikipediaQueryRun(api_wrapper=WikipediaAPIWrapper(top_k_results=1))
-    tools = []
-    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+    tools = [time_tool]
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash-exp-0827")
     llm_with_tools = llm.bind_tools(tools)
 
     base_prompt = ""
@@ -45,8 +52,8 @@ def main():
 
     graph_builder.add_node("chatbot", chatbot)
 
-    # tool_node = ToolNode(tools=[tool])
-    # graph_builder.add_node("tools", tool_node)
+    tool_node = ToolNode(tools=[time_tool])
+    graph_builder.add_node("tools", tool_node)
 
 
     graph_builder.add_conditional_edges(
@@ -54,7 +61,7 @@ def main():
         tools_condition,
     )
     
-    # graph_builder.add_edge("tools", "chatbot")
+    graph_builder.add_edge("tools", "chatbot")
     graph_builder.set_entry_point("chatbot")
     memory = MemorySaver()
     graph = graph_builder.compile(checkpointer=memory)
@@ -68,8 +75,8 @@ def main():
             break
         for event in graph.stream({"messages": [("user", user_input)]}, config=config, stream_mode="values"):
             last_message = event["messages"][-1]
-            if isinstance(last_message, BaseMessage) and last_message.content != user_input:
-                print("Agent: " + last_message.content)
+            if isinstance(last_message, AIMessage) and not getattr(last_message, 'tool_calls', None) and last_message.content:
+                print("Luna: " + last_message.content.rstrip())
 
 
 
